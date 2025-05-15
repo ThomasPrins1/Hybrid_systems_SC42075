@@ -1,0 +1,53 @@
+%% Variables
+x_eff = 11.9; % mm
+xr_eff = 16;  % mm
+x_max = 40;   % mm
+N_grind_max = 10;
+psi = 0.98;
+psi_real = 1.09;
+gamma0 = 0;
+gamma1 = 1;
+gamma2 = 3;
+
+grp_nr = 4;
+
+x_con = [20+0.5*(abs(grp_nr-15));
+     22+0.5*(abs(grp_nr-15));
+     25+0.5*(abs(grp_nr-15));
+     27+0.5*(abs(grp_nr-15));
+     17+0.5*(abs(grp_nr-15))]
+x_aux = [7;8;7;7;8];
+x0 = [x_con]
+A_real = [1.0017;
+          1.015;
+          1.008];
+B_real = [1.6959;
+          2.2165];
+
+A = [1.0075;
+     1.0095;
+     1.01];
+B = [1.65+0.001*abs(grp_nr-15);
+     2.07+0.001*abs(grp_nr-15);
+     2.47+0.001*abs(grp_nr-15)];
+j_max = 5; % number of sections
+q_max = 3; % number of splits in a section
+u = zeros(1,j_max)
+
+% dynamics:
+
+%% Functions
+
+%% Main code
+
+
+for (q:q_max)
+    if (x_con<30):
+        x_con_split[1] = x_con[q]
+    elseif (x<50):
+        x_con_split[2] = x_con[q]
+    elseif (x<70):
+        x_con_split[3] = x_con[q]
+    for (j:j_max):
+        f_degrade[j] = A[q]*x_con[q,j]+B[q]
+%% Plotting
