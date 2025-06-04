@@ -32,17 +32,30 @@ B = [1.65+0.001*abs(grp_nr-15);
      2.47+0.001*abs(grp_nr-15)];
 j_max = 5; % number of sections
 q_max = 3; % number of splits in a section
+iter_max = 100; % number of iterations
 u = zeros(1,j_max);
 x_con_split = zeros(q_max,j_max);
 f_degrade = zeros(q_max,j_max);
+
+% cost_function
+J = J_deg + lapda*J_maint;
+% J_deg = sum_j(sum_l(x_j_con)) summation of the length of degradation spots
+% J_maint = sum_j(sum_l(sum_q(gamma*I))) 
+% where I is an indication function to check if k+l-1 = a_q, its 1 if true,
+% 0 if false
+% gamma is given in the assignment
 % dynamics:
 
 %% Functions
 
 %% Main code
-% Split the x_con per section into degradation classes:
+% First part splits the x_con per section into degradation classes:
 % 1->(0,30)
-for j = 1:j_max
+% 2->(30,50)
+% 3->(50,70)
+% f_degrade predicts the amount of degradation (squat size) in a section 
+% after a month based on given weights in vector A, B and the split x_con
+for j=1:j_max
     if x_con(j)<30
         x_con_split(1,j) = x_con(j);
     elseif x_con(j)<50
@@ -50,14 +63,36 @@ for j = 1:j_max
     elseif (x_con(j)<70)
         x_con_split(3,j) = x_con(j);
     end
-end
-x_con_split
-% This predicts the amount of degradation (squat size) in a section after a
-% month
-for q=1:q_max
-    for j=1:j_max
+    for q=1:q_max
         f_degrade(q,j) = A(q)*x_con_split(q,j)+B(q);
     end
+    if x_j_con =<
+        f_grind = 0 % no grinding possible
+    else
+        f_grind = psi % grinding possible
+    end
+
 end
+for j=1:j_max
+    for k = 1:iter_max
+        % set degradation dynamics for each different value of u
+        if u(j,k)== 0
+            x_con(j,k) = f_degrade
+        elseif u(j,k) == 1
+            x_con(j,k)f_grind
+        elseif u(j,k) == 2 % replace
+            0
+        end
+        % set auxilary dynamics
+        if u(j,k)== 0
+            x_aux(j,k+1) = x_aux(j,k)
+        elseif u(j,k) == 1
+            x_aux(j,k+1) = x_aux(j,k)+1
+        elseif u(j,k) == 2 % replace
+            x_aux(j,k+1) = 0
+        end
+    end
+end
+x_con_split
 f_degrade
 %% Plotting
