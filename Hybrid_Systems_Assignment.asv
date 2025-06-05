@@ -25,9 +25,9 @@ x_con(:,1) = [20+0.5*(abs(grp_nr-15));
      25+0.5*(abs(grp_nr-15));
      27+0.5*(abs(grp_nr-15));
      17+0.5*(abs(grp_nr-15))];
+x_aux = zeros(j_max,iter_max);
+x_aux(:,1) = [7;8;7;7;8];
 
-x_aux = [7;8;7;7;8];
-x0 = x_con;
 A_real = [1.0017;
           1.015;
           1.008];
@@ -40,9 +40,12 @@ A = [1.0075;
 B = [1.65+0.001*abs(grp_nr-15);
      2.07+0.001*abs(grp_nr-15);
      2.47+0.001*abs(grp_nr-15)];
-u = zeros(1,j_max);
+
+% matrix definitions
+u = zeros(j_max,iter_max);
 x_con_split = zeros(j_max,q_max);
 f_degrade = zeros(j_max,1);
+f_grind = zeros(j_max,1);
 
 % cost_function
 %J = J_deg + lapda*J_maint;
@@ -64,6 +67,14 @@ function out = predictTrackDeg(track,weightsA,weightsB)
         out = weightsA(3)*track+weightsB(3);
     else
         out = 0;
+    end
+end
+
+function out = predictGrindingEffect(track,psi_f,x_eff_f)
+    if track <= x_eff_f
+        out = 0; % no grinding possible
+    else
+        out = psi_f*(track-x_eff_f); % grinding possible
     end
 end
 %% Main code
@@ -103,22 +114,26 @@ for j = 1:j_max
             f_degrade(j) = predictTrackDeg(x_con(j,k),A,B)
             x_con(j,k+1) = f_degrade(j); %f_degrade(j,k);
         elseif u(j) == 1
-            x_con(j,k+1) = f_grind;
+            f_grind(j) = predictGrindingEffect(x_con(j,k),psi,x_eff)
+            x_con(j,k+1) = f_grind(j);
         elseif u(j) == 2 % replace
             x_con(j,k+1) = 0;
         end
-        % set auxilary dynamics
-        if u(j)== 0
+        % set auxilary dynamics, which count the amount of grindings done.
+        if u(j)== 0 % no action
             x_aux(j,k+1) = x_aux(j,k);
-        elseif u(j) == 1
+        elseif u(j) == 1 % grind
             x_aux(j,k+1) = x_aux(j,k)+1;
         elseif u(j) == 2 % replace
             x_aux(j,k+1) = 0;
         end
     end
+    % here a MPC controller 
 end
 % l is the prediction horizon to look into the future
-
+% our system is now a PWA with:
+% x(k+1) = A_i*x(k) + B_i*u(k) + f_i
+% y(k+1) = C_i*x(k)
 %% Plotting
 x_con_split;
 f_degrade;
