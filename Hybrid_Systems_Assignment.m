@@ -144,11 +144,11 @@ end
 
 % MLD part:
 % first we check our states:
-% u can be [0,1,2], so this requires 2 auxillary variables delta(1) and (2)
+% x_con can be in 3 seperate states, so this requires 2 auxillary variables delta(1) and (2)
 % [0 0] = state 0
 % [1 0] = state 1
 % [1 1] = state 2
-% [0 1] = no state, make sure to exclude
+% [0 1] = no state, make sure to exclude (by putting to 0?)
 % also done here: https://www.researchgate.net/publication/262220797_MLD_Systems_Modeling_and_Control
 
 %% Plotting
