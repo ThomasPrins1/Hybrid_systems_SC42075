@@ -145,12 +145,17 @@ end
 % MLD part:
 % first we check our states:
 % x_con can be in 3 seperate states, so this requires 2 auxillary variables delta(1) and (2)
-% [0 0] = state 0
-% [1 0] = state 1
-% [1 1] = state 2
+% smaller then 30, smaller then 50, smaller then 70:
+% [0 0] = state 0 -> 30 gives A1*x+B1
+% [1 0] = state 1 -> 50 gives A2*x+B2
+% [1 1] = state 2 -> 70 gives A3*x+B3
 % [0 1] = no state, make sure to exclude (by putting to 0?)
 % also done here: https://www.researchgate.net/publication/262220797_MLD_Systems_Modeling_and_Control
-
+% We create an extended state space: x(k) = [x(k), delta1, delta2]
+% if delta1 = 0 & delta2 = 0: A1 + B1*u + 0 + 0
+% if delta1 = 1 & delta2 = 0: A1 + A2 + B1*u + B2 + 0
+% if delta1 = 0 & delta2 = 1: A1 + A3 + B1*u + B3 + 0
+A123 + B1 A2+B2 A3+B3
 %% Plotting
 x_con_split;
 f_degrade;
