@@ -14,7 +14,7 @@ gamma = [gamma1,gamma2,gamma3];
 j_max = 5; % number of sections
 q_max = 3; % number of splits in a section
 iter_max = 100; % number of iterations
-N_p = 6; % prediction horizon (in months?)
+N_p = 2; % prediction horizon (in months?)
 
 grp_nr = 4;
 x_con = zeros(j_max,iter_max+N_p);
@@ -59,10 +59,20 @@ delta = zeros(3,1);
 % dynamics:
 
 %% Functions
-function out = convexMILP(x_con,lapda,gamma,n,A,B,x_eff,psi)
+function out = convexMILP(x_con,lapda,gamma,k,n,N_p,A,B,x_eff,psi)
+    % need to save x_con in convex variable:
+    x_pred = optimexpr(n, N_p + 1);  
+    x_pred(:,1) = x_con(:,k);
+    x0.delta_u = [1; 0; 0];   % Initial guess for delta_u
+    x0.delta = [1; 0; 0];     % Initial guess for delta
+    x0.z = [10; 40; 60];      % Initial guess for z (within bounds)
+    x0.delta_grind = [0];
+    x0.z_grind = [50];
     delta_u = optimvar('delta_u', 3, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
     delta = optimvar('delta', 3, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
+    delta_grind = optimvar('delta_grind', 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
     z = optimvar('z', 3, 'LowerBound', 0);
+    z_grind = optimvar('z_grind', 1, 'LowerBound', 0);
 
     x_min = [0,30,50];
     x_max = [30,50,70];
@@ -75,10 +85,10 @@ function out = convexMILP(x_con,lapda,gamma,n,A,B,x_eff,psi)
         delta(1) + delta(2) - delta(3) <= 1;
     ];
     
-    for i = 1:3
+    for q = 1:3
         ineq_constraints = [ineq_constraints;
-            z(i) <= x_max(i) * delta(i);
-            z(i) >= x_min(i) * delta(i);
+            z(q) <= x_max(q) * delta(q);
+            -z(q) <= -x_min(q) * delta(q); % multiplied by -1 to change to <=
         ];
     end
     % u is also a binary value that we want to use inside our convex 
@@ -86,32 +96,36 @@ function out = convexMILP(x_con,lapda,gamma,n,A,B,x_eff,psi)
     % MPC will choose to do maintenance, replace or do nothing
     for j = 1:n
         for l = 1:N_p
-            for i = 1:3
+            track_prediction = predictTrackDeg(x_pred(j,k+l-1),A,B,delta,z,"MLD");
+            [grinding_prediction,x_grind_max,x_grind_min] = predictGrindingEffect(x_pred(j,k+l-1),psi,x_eff,delta_grind,z_grind,"MLD");
+            x_pred(j,k+l) = delta_u(1)*track_prediction + delta_u(2)*grinding_prediction + delta_u(3)*0;
+            for q = 1:3
                 ineq_constraints = [ineq_constraints;
-                z(i) <= x_con(j,k+l-1) - x_min(i) * (1 - delta(i));
-                z(i) >= x_con(j,k+l-1) - x_max(i) * (1 - delta(i));
+                z(q) <= x_pred(j,k+l-1) - x_min(q) * (1 - delta(q));
+                -z(q) <= -x_pred(j,k+l-1) + x_max(q) * (1 - delta(q)); % multiplied by -1 to change to <=
                 ];
             end
-            track_prediction = predictTrackDeg(x_con(j,k+l-1),A,B,delta,z,"MLD");
-            grinding_prediction = predictGrindingEffect(x_con(j,k+l-1),psi,x_eff);
-            x_con(j,k+l) = delta_u(1)*track_prediction + delta_u(2)*grinding_prediction + delta_u(3)*0;
-
+            ineq_constraints = [ineq_constraints;
+            z_grind <= x_pred(j,k+l-1) - x_grind_min * (1 - delta_grind);
+            -z_grind <= -x_pred(j,k+l-1) + x_grind_max * (1 - delta_grind);
+            ];
         end
     end
-    J_deg_pred = sum(x_con);
-
+    ineq_constraints = [ineq_constraints;
+        z_grind <= x_grind_max * delta_grind;
+        -z_grind <= -x_grind_min * delta_grind;
+        ]
+    J_deg_pred = sum(x_pred);
+    J_maint = 0;
     for j = 1:n
         for l = 1:N_p
-            for q = 1:p
-                if delta_u(q) == q
-                    J_maint = J_maint + gamma(q);
-                    % assigment says gamma(j,q), but i cannot see how gamma is different between tracks?
-                    % This would onyl be a small change anyway, but gamma
-                    % values are only given for q=1,q=2 and q=3, without
-                    % differences between j values
-                else
-                    J_maint = J_maint + 0;
-                end
+            for q = 1:3
+                add_JMaint = gamma(q) * delta_u(q);
+                J_maint = J_maint + add_JMaint;
+                % assigment says gamma(j,q), but i cannot see how gamma is different between tracks?
+                % This would onyl be a small change anyway, but gamma
+                % values are only given for q=1,q=2 and q=3, without
+                % differences between j values
             end
         end
     end
@@ -126,8 +140,10 @@ function out = convexMILP(x_con,lapda,gamma,n,A,B,x_eff,psi)
     options = optimoptions('intlinprog', 'Display', 'iter'); % Show solver output
     %int_vars = [delta_u; delta];
     % Solve the problem
+    x_pred(:,1)
     [sol, fval, exitflag, output] = solve(prob, x0, 'Options', options, 'Solver', 'intlinprog');
-    [~, u] = max(sol.delta_u); 
+    [~, u] = max(sol.delta_u);
+    % output u for MPC given:
     out = u - 1; % Because MATLAB indices start at 1, so subtract 1 to get u ∈ {0,1,2}
 end
 
@@ -152,18 +168,18 @@ function out = predictTrackDeg(track,weightsA,weightsB,delta,z,controller_type)
         % -delta1+delta3 <= 0
         % -delta1+delta3 <= 0
         % delta1 + delta2 - delta3 <= 1
-        delta(3) = delta(1)*delta(2); % under constraints!
+        %delta(3) = delta(1)*delta(2); % This is held by constraints!
         %dynamic1 = (1+delta3-delta(1)-delta(2)*weightsA(1)*track+weightsB(1));
         %dynamic2 = ((delta(2)-delta(3))*weightsA(2)*track+weightsB(2));
         %dynamic3 = ((delta(1)-delta(3))*weightsA(3)*track+weightsB(3));
         % Then the next step will be to take out the delta1*x and delta2*x
         % and replace this with auxillary variables z1 and z2, this will
         % cause the function to be represented by z, delta, x all in
-        % liniear form:
-        z1 = delta(1)*track;
-        z2 = delta(2)*track;
-        z3 = delta(3)*track;
-        z = [z1,z2,z3]
+        % liniear form (similarly included in convex!):
+        %z1 = delta(1)*track;
+        %z2 = delta(2)*track;
+        %z3 = delta(3)*track;
+        %z = [z1,z2,z3]
         dynamic1A = -z(1)*weightsA(1)-z(2)*weightsA(1)+z(3)*weightsA(1)+track*weightsA(1);
         dynamic1B = -delta(1)*weightsB(1)-delta(2)*weightsB(1)+delta(3)*weightsB(1)+weightsB(1);
         dynamic2 = z(2)*weightsA(2) - z(3)*weightsA(2) + delta(2)*weightsB(2) - delta(3)*weightsB(2);
@@ -179,11 +195,19 @@ function out = predictTrackDeg(track,weightsA,weightsB,delta,z,controller_type)
     end
 end
 
-function out = predictGrindingEffect(track,psi_f,x_eff_f)
-    if track <= x_eff_f
-        out = 0; % no grinding possible
-    else
-        out = psi_f*(track-x_eff_f); % grinding possible
+function [out,max,min] = predictGrindingEffect(track,psi_f,x_eff_f,delta_grind,z_grind,controller_type)
+    max = 70
+    min = x_eff_f
+    if controller_type == "PWA"
+        if track <= x_eff_f
+            out = 0; % no grinding possible
+        else
+            out = psi_f*(track-x_eff_f); % grinding possible
+        end
+    elseif controller_type == "MLD"
+        
+        %[out,max] = delta_grind*(psi_f*(track-x_eff_f));
+        out = psi_f*(z_grind - delta_grind*x_eff_f);
     end
 end
 
@@ -199,10 +223,10 @@ for k = 1:iter_max % k is iterations so need to be reworked into other var
     for j = 1:j_max
         % set degradation dynamics for each different value of u
         if u(j)== 0 
-            f_degrade(j) = predictTrackDeg(x_con(j,k),A,B,delta,[0,0,0],"MLD")
+            f_degrade(j) = predictTrackDeg(x_con(j,k),A,B,delta,[0,0,0],"PWA")
             x_con(j,k+1) = f_degrade(j);
         elseif u(j) == 1
-            f_grind(j) = predictGrindingEffect(x_con(j,k),psi,x_eff) % constant so nothing needed
+            [f_grind(j),~,~] = predictGrindingEffect(x_con(j,k),psi,x_eff,delta,0,"PWA") % constant so nothing needed
             x_con(j,k+1) = f_grind(j);
         elseif u(j) == 2 % replace
             x_con(j,k+1) = 0;
@@ -221,7 +245,7 @@ for k = 1:iter_max % k is iterations so need to be reworked into other var
     % lapda = linspace(600,800,50)
     % for r = 1:51 ...
     lapda = 600; % needs to be between 600-800
-    u(k) = convexMILP(x_con,lapda,gamma,j_max,A,B,x_eff,psi)
+    u(k) = convexMILP(x_con,lapda,gamma,k,j_max,N_p,A,B,x_eff,psi)
     %predictTrackDeg(x_con(j,k),A,B,delta,"MLD")
 end
 % l is the prediction horizon to look into the future
